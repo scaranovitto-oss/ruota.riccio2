@@ -531,6 +531,130 @@
   color: #998b82;
 }
 
+
+/* ================================
+   CONFERMA RITIRO PREMIO
+   ================================ */
+
+.claim-box{
+  margin-top: 14px;
+  padding-top: 18px;
+  border-top: 2px dashed #e7d8c9;
+  animation: claimIn .45s ease both;
+}
+.claim-box[hidden]{ display:none; }
+
+@keyframes claimIn{
+  from{ opacity:0; transform: translateY(10px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+.claim-warning{
+  display:flex;
+  gap: 12px;
+  align-items:flex-start;
+  background: #fff3cf;
+  border: 2px solid var(--gold);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.claim-warning[hidden]{ display:none; }
+.claim-warning .claim-icon{ font-size: 24px; line-height: 1.1; }
+.claim-warning p{
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.btn-claim{
+  background: linear-gradient(180deg, #2fc0b7, var(--teal) 60%, var(--teal-deep));
+  color: var(--white);
+  border: 2px solid var(--ink);
+  box-shadow: 0 8px 0 var(--ink), 0 14px 22px -8px rgba(0,0,0,0.5);
+}
+.btn-claim:hover{ transform: translateY(-1px); }
+.btn-claim:active{ transform: translateY(3px); box-shadow: 0 4px 0 var(--ink), 0 8px 14px -8px rgba(0,0,0,0.5); }
+.btn-claim[hidden]{ display:none; }
+
+.claim-done{
+  margin: 0;
+  text-align:center;
+  font-family:'Pacifico', cursive;
+  font-size: 19px;
+  color: var(--teal-deep);
+}
+.claim-done[hidden]{ display:none; }
+
+
+/* ================================
+   MODULO NOME E COGNOME
+   ================================ */
+
+#form-section[hidden], #wheel-section[hidden]{ display:none; }
+
+.form-title{
+  font-family:'Pacifico', cursive;
+  font-size: 24px;
+  color: var(--teal-deep);
+  text-align:center;
+  margin: 4px 0 6px;
+}
+.form-sub{
+  text-align:center;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  margin: 0 0 20px;
+}
+.form-field{ margin-bottom: 14px; }
+.form-field label{
+  display:block;
+  font-family:'Bebas Neue', sans-serif;
+  letter-spacing: 0.06em;
+  font-size: 15px;
+  color: var(--red-deep);
+  margin-bottom: 4px;
+}
+.form-field input{
+  width: 100%;
+  background: var(--white);
+  border: 2px solid #e7d8c9;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family:'Poppins', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.form-field input:focus{ outline:none; border-color: var(--teal); }
+.form-error{
+  min-height: 20px;
+  margin: 0 0 10px;
+  text-align:center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--red);
+}
+
+.claim-name{
+  margin: 0 0 12px;
+  text-align:center;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.claim-name strong{ color: var(--ink); }
+.claim-name:empty{ display:none; }
+.claim-error{
+  min-height: 18px;
+  margin: 10px 0 0;
+  text-align:center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--red);
+}
+
 </style>
 </head>
 <body>
@@ -570,6 +694,27 @@
 
   <div class="card">
 
+    <!-- STEP 1: nome e cognome (dopo il countdown) -->
+    <div id="form-section" hidden>
+      <p class="form-title">Prima di girare</p>
+      <p class="form-sub">Inserisci nome e cognome: il premio sarà intestato a te e potrai ritirarlo in cassa.</p>
+      <form id="player-form" novalidate>
+        <div class="form-field">
+          <label for="inp-nome">Nome</label>
+          <input id="inp-nome" type="text" maxlength="40" autocomplete="given-name" autocapitalize="words" required>
+        </div>
+        <div class="form-field">
+          <label for="inp-cognome">Cognome</label>
+          <input id="inp-cognome" type="text" maxlength="40" autocomplete="family-name" autocapitalize="words" required>
+        </div>
+        <p class="form-error" id="form-error" role="alert"></p>
+        <button type="submit" class="btn btn-primary" id="btn-form">Continua</button>
+      </form>
+    </div>
+
+    <!-- STEP 2: ruota -->
+    <div id="wheel-section" hidden>
+
     <div class="wheel-area">
       <div class="pointer"></div>
       <div class="wheel-outer">
@@ -580,6 +725,19 @@
 
     <button class="btn btn-primary" id="btn-spin">Gira la ruota</button>
     <div class="spin-result" id="spin-result">&nbsp;</div>
+
+    <div class="claim-box" id="claim-box" hidden>
+      <p class="claim-name" id="claim-name"></p>
+      <div class="claim-warning" id="claim-warning">
+        <span class="claim-icon">⚠️</span>
+        <p><strong>Attendi!</strong> Recati prima in cassa e mostra questa schermata al cassiere. Clicca su &laquo;Conferma ritiro premio&raquo; solo quando sei davanti alla cassa.</p>
+      </div>
+      <button class="btn btn-claim" id="btn-claim">Conferma ritiro premio</button>
+      <p class="claim-error" id="claim-error" role="alert"></p>
+      <p class="claim-done" id="claim-done" hidden>✅ Premio ritirato. Grazie e a presto!</p>
+    </div>
+
+    </div><!-- /wheel-section -->
     <p id="stato-msg" style="text-align:center;font-size:12.5px;color:var(--ink-soft);margin-top:10px;"></p>
 
   </div>
@@ -594,10 +752,16 @@
   // CONFIGURAZIONE — incolla qui l'URL del Web App di Apps Script
   // (Distribuisci > Nuova implementazione > Web app > copia l'URL "/exec")
   // ==========================================================================
-  const API_URL = 'https://script.google.com/macros/s/AKfycbyhfpCTUESugoXz8sPAg1rmqlcX6FvY4F6i5pgjnEdXPudJOfTj6n4YLvIj2Pj9UXqc/exec';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxebqe1Q6hWgXEzTDmA9vEgkTcteABt8ipcudfXzHyfF_8SdRbbyZJfreZ40iO8CBJk/exec';
 
   const FLAG_KEY = 'ilriccio_ruota_ha_partecipato';
   const PRIZE_KEY = 'ilriccio_ruota_premio_vinto';
+  const CLAIM_KEY = 'ilriccio_ruota_premio_ritirato';
+  const NAME_KEY = 'ilriccio_ruota_nome';
+  const SURNAME_KEY = 'ilriccio_ruota_cognome';
+  const CODE_KEY = 'ilriccio_ruota_codice';
+  // Nome/cognome: devono iniziare con una lettera; solo lettere, spazi, ' . -
+  const NAME_RE = /^\p{L}[\p{L}' .\-]*$/u;
   const PALETTE = ['#E5231B', '#23A69E', '#201613', '#A81410'];
 
   let premiCache = [];   // stato della ruota così come "fotografato" al caricamento:
@@ -605,11 +769,24 @@
                           // cliente vede non cambia MAI aspetto durante la sessione.
   let currentRotation = 0;
   let spinning = false;
+  let claiming = false;
 
   const wheelEl = document.getElementById('wheel');
   const spinResultEl = document.getElementById('spin-result');
   const btnSpin = document.getElementById('btn-spin');
   const statoMsgEl = document.getElementById('stato-msg');
+  const claimBoxEl = document.getElementById('claim-box');
+  const claimWarningEl = document.getElementById('claim-warning');
+  const claimDoneEl = document.getElementById('claim-done');
+  const btnClaim = document.getElementById('btn-claim');
+  const claimNameEl = document.getElementById('claim-name');
+  const claimErrorEl = document.getElementById('claim-error');
+  const formSectionEl = document.getElementById('form-section');
+  const wheelSectionEl = document.getElementById('wheel-section');
+  const playerForm = document.getElementById('player-form');
+  const inpNome = document.getElementById('inp-nome');
+  const inpCognome = document.getElementById('inp-cognome');
+  const formErrorEl = document.getElementById('form-error');
 
   function nominalWeight(p){
     return Number(p.weight) > 0 ? Number(p.weight) : 0;
@@ -709,6 +886,89 @@
     return data.premi;
   }
 
+  // Mostra la sezione di ritiro premio: avviso + tasto di conferma, oppure
+  // (se il premio è già stato ritirato) solo il messaggio finale.
+  function normalizzaNome(v){
+    return String(v || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function nomeValido(v){
+    return v.length > 0 && v.length <= 40 && NAME_RE.test(v);
+  }
+
+  function mostraForm(){
+    inpNome.value = localStorage.getItem(NAME_KEY) || '';
+    inpCognome.value = localStorage.getItem(SURNAME_KEY) || '';
+    formErrorEl.textContent = '';
+    wheelSectionEl.hidden = true;
+    formSectionEl.hidden = false;
+  }
+
+  function mostraRuota(){
+    formSectionEl.hidden = true;
+    wheelSectionEl.hidden = false;
+    renderWheel(); // ora che la ruota è visibile le dimensioni sono corrette
+  }
+
+  playerForm.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    const nome = normalizzaNome(inpNome.value);
+    const cognome = normalizzaNome(inpCognome.value);
+    if (!nomeValido(nome) || !nomeValido(cognome)){
+      formErrorEl.textContent = 'Inserisci nome e cognome validi (solo lettere, spazi, apostrofi e trattini).';
+      return;
+    }
+    localStorage.setItem(NAME_KEY, nome);
+    localStorage.setItem(SURNAME_KEY, cognome);
+    mostraRuota();
+  });
+
+  function mostraRitiroPremio(){
+    const ritirato = !!localStorage.getItem(CLAIM_KEY);
+    const nome = localStorage.getItem(NAME_KEY);
+    const cognome = localStorage.getItem(SURNAME_KEY);
+    claimNameEl.textContent = '';
+    if (nome && cognome){
+      claimNameEl.appendChild(document.createTextNode('Premio intestato a: '));
+      const strong = document.createElement('strong');
+      strong.textContent = nome + ' ' + cognome;
+      claimNameEl.appendChild(strong);
+    }
+    claimBoxEl.hidden = false;
+    claimWarningEl.hidden = ritirato;
+    btnClaim.hidden = ritirato;
+    claimDoneEl.hidden = !ritirato;
+  }
+
+  async function confermaRitiro(){
+    if (claiming) return;
+    const codice = localStorage.getItem(CODE_KEY);
+    if (!codice){
+      claimErrorEl.textContent = 'Codice vincita non trovato. Rivolgiti al personale in cassa.';
+      return;
+    }
+
+    claiming = true;
+    btnClaim.disabled = true;
+    claimErrorEl.textContent = '';
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ azione: 'ritira', codice: codice })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.errore || 'errore');
+      localStorage.setItem(CLAIM_KEY, '1');
+      mostraRitiroPremio();
+    } catch (err){
+      claimErrorEl.textContent = 'Errore di connessione. Riprova tra qualche secondo.';
+      btnClaim.disabled = false;
+    } finally {
+      claiming = false;
+    }
+  }
+
   function mostraGiaPartecipato(){
     const premioVinto = localStorage.getItem(PRIZE_KEY);
     btnSpin.disabled = true;
@@ -716,6 +976,7 @@
     spinResultEl.innerHTML = premioVinto
       ? `Hai già vinto: <strong>${premioVinto}</strong>! Grazie per aver partecipato 🎉`
       : 'Hai già partecipato a questa promozione. Grazie!';
+    if (premioVinto) mostraRitiroPremio();
   }
 
   async function spin(){
@@ -725,27 +986,20 @@
     btnSpin.disabled = true;
     spinResultEl.textContent = 'Un attimo...';
 
-    let data;
-
+    let chosen;
     try {
-      // A escolha do prêmio e a atualização do contador agora acontecem
-      // no servidor, dentro de um único POST protegido por LockService.
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ azione: 'vinci' })
-      });
+      // Contatori sempre aggiornati al momento del giro: eventuali altri
+      // clienti che hanno vinto nel frattempo vengono correttamente esclusi.
+      const freshPremi = await fetchStato();
+      const freshById = {};
+      freshPremi.forEach(p => { freshById[p.id] = p; });
 
-      data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.errore || 'errore');
-      }
-
-      // Il server restituisce anche lo stato aggiornato, quindi non serve
-      // una seconda richiesta GET durante il giro.
-      if (Array.isArray(data.premi) && data.premi.length) {
-        premiCache = data.premi;
-      }
+      const merged = premiCache.map(p => ({
+        ...p,
+        maxCount: freshById[p.id] ? freshById[p.id].maxCount : p.maxCount,
+        count: freshById[p.id] ? freshById[p.id].count : 0
+      }));
+      chosen = pickWinnerPrize(merged);
     } catch (err){
       spinning = false;
       btnSpin.disabled = false;
@@ -753,23 +1007,44 @@
       return;
     }
 
-    const chosen = {
-      id: String(data.id),
-      name: data.name || 'Premio'
-    };
-
-    const { segments } = buildSegments(premiCache);
-    const winnerSeg = segments.find(s => s.id === chosen.id);
-
-    if (!winnerSeg) {
+    if (!chosen){
       spinning = false;
       btnSpin.disabled = false;
-      spinResultEl.textContent = 'Errore: premio non presente nella ruota.';
+      spinResultEl.textContent = 'La promozione non è al momento disponibile.';
       return;
     }
 
-    // La vincita è già registrata sul server: ora la ruota anima
-    // verso il settore del premio estratto.
+    // Registra la vincita PRIMA di animare: se questa richiesta fallisce,
+    // non è stato conteggiato nulla ed è sicuro far ritentare il cliente.
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          azione: 'vinci',
+          id: chosen.id,
+          nome: localStorage.getItem(NAME_KEY) || '',
+          cognome: localStorage.getItem(SURNAME_KEY) || ''
+        })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.errore || 'errore');
+      // La vincita è ora registrata sul foglio: la ricordiamo subito, così un
+      // eventuale ricaricamento durante l'animazione non permette di rigirare.
+      localStorage.setItem(CODE_KEY, data.codice || '');
+      localStorage.setItem(FLAG_KEY, '1');
+      localStorage.setItem(PRIZE_KEY, chosen.name || '');
+    } catch (err){
+      spinning = false;
+      btnSpin.disabled = false;
+      spinResultEl.textContent = 'Errore di connessione. Riprova tra qualche secondo.';
+      return;
+    }
+
+    // Da qui in poi la vincita è già registrata: la ruota anima sempre
+    // verso il settore proprio del premio estratto (dimensione invariata).
+    const { segments } = buildSegments(premiCache);
+    const winnerSeg = segments.find(s => s.id === chosen.id) || segments[segments.length - 1];
+
     const span = winnerSeg.end - winnerSeg.start;
     const margin = Math.min(1.5, span / 4);
     const targetPct = span > 0
@@ -790,10 +1065,12 @@
       localStorage.setItem(PRIZE_KEY, winnerSeg.name);
       btnSpin.disabled = true;
       btnSpin.textContent = 'Hai già partecipato';
+      mostraRitiroPremio();
     }, 4700);
   }
 
   btnSpin.addEventListener('click', spin);
+  btnClaim.addEventListener('click', confermaRitiro);
   window.addEventListener('resize', renderWheel);
 
   /* ================================
@@ -873,10 +1150,13 @@
     countdownEl.textContent = '✓';
     statusEl.textContent = 'Ruota pronta!';
 
-    renderWheel();
-
+    // Dopo il countdown: se ha già partecipato mostriamo direttamente lo stato,
+    // altrimenti prima il modulo nome e cognome.
     if (localStorage.getItem(FLAG_KEY)) {
+      mostraRuota();
       mostraGiaPartecipato();
+    } else {
+      mostraForm();
     }
 
     await new Promise(resolve => setTimeout(resolve, 450));
