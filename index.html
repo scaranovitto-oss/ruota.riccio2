@@ -752,7 +752,7 @@
   // CONFIGURAZIONE — incolla qui l'URL del Web App di Apps Script
   // (Distribuisci > Nuova implementazione > Web app > copia l'URL "/exec")
   // ==========================================================================
-  const API_URL = 'https://script.google.com/macros/s/AKfycbxebqe1Q6hWgXEzTDmA9vEgkTcteABt8ipcudfXzHyfF_8SdRbbyZJfreZ40iO8CBJk/exec';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbyYtOVY6HBOkJd6XicVAVxs_FdRjw0YKKrbdjRHHgJWO4WeecOOT7IU5eZ1-etWANk/exec';
 
   const FLAG_KEY = 'ilriccio_ruota_ha_partecipato';
   const PRIZE_KEY = 'ilriccio_ruota_premio_vinto';
@@ -830,14 +830,25 @@
 
     wheelEl.querySelectorAll('.seg-label').forEach(el => el.remove());
 
-    const wheelSize = wheelEl.clientWidth || 290;
-    const radius = wheelSize / 2 - 42;
+    const wheelSize = wheelEl.clientWidth || 278;
+    const hubEl = document.querySelector('.hub');
+    const hubR = (hubEl && hubEl.offsetWidth) ? hubEl.offsetWidth / 2 : 31;
+    const rInner = hubR + 9;                            // il testo parte poco fuori dal mozzo...
+    const rOuter = wheelSize / 2 - 9;                   // ...e arriva quasi al bordo
+    const radius = (rInner + rOuter) / 2;               // centro del testo lungo il raggio
+    const labelLength = Math.max(40, rOuter - rInner);  // spazio per ogni riga prima dei puntini
     const fontSize = segments.length > 8 ? 10 : segments.length > 5 ? 11.5 : 13;
-    const maxLabelWidth = Math.max(40, Math.min(88, (2 * Math.PI * radius) / Math.max(segments.length, 1) - 8));
+    const lineH = fontSize * 1.1;
 
     segments.forEach(s => {
       if (s.end - s.start < 0.5) return;
       const midDeg = s.mid * 3.6;
+
+      // Se il settore è abbastanza largo il nome va a capo (fino a 3 righe)
+      // invece di troncarsi subito con i puntini di sospensione.
+      const halfAngle = Math.min(((s.end - s.start) * 3.6 / 2) * Math.PI / 180, Math.PI / 3);
+      const thickness = 2 * rInner * Math.tan(halfAngle) - 2;
+      const lines = Math.max(1, Math.min(3, Math.floor(thickness / lineH)));
 
       const wrap = document.createElement('div');
       wrap.className = 'seg-label';
@@ -847,11 +858,16 @@
       txt.className = 'txt';
       txt.textContent = s.name;
       txt.style.top = -radius + 'px';
+      txt.style.width = labelLength + 'px';
       txt.style.fontSize = fontSize + 'px';
-      txt.style.maxWidth = maxLabelWidth + 'px';
+      txt.style.lineHeight = '1.1';
+      txt.style.whiteSpace = 'normal';
+      txt.style.overflowWrap = 'anywhere';
+      txt.style.display = '-webkit-box';
+      txt.style.setProperty('-webkit-box-orient', 'vertical');
+      txt.style.setProperty('-webkit-line-clamp', String(lines));
       txt.style.overflow = 'hidden';
-      txt.style.textOverflow = 'ellipsis';
-      txt.style.transform = 'translateX(-50%) rotate(90deg)';
+      txt.style.transform = 'translate(-50%, -50%) rotate(90deg)';
 
       wrap.appendChild(txt);
       wheelEl.appendChild(wrap);
@@ -979,34 +995,76 @@
     if (premioVinto) mostraRitiroPremio();
   }
 
+  // --- Animazione -----------------------------------------------------------
+  // La ruota parte SUBITO (giro "di attesa" veloce) mentre il server registra la
+  // vincita, poi frena fino al premio estratto: niente più pausa prima del giro.
+  const WARM_SPEED = 900;   // gradi al secondo durante l'attesa
+  const WARM_MAX_S = 30;    // durata massima del giro d'attesa
+  const FINAL_MS = 3600;    // durata della frenata finale
+  const FINAL_EASE = 'cubic-bezier(.15,.65,.1,1)';
+  let warmBase = 0;
+  let warmStart = 0;
+
+  function avviaGiroAttesa(){
+    warmBase = currentRotation;
+    warmStart = performance.now();
+    wheelEl.style.transition = `transform ${WARM_MAX_S}s linear`;
+    wheelEl.style.transform = `rotate(${warmBase + WARM_SPEED * WARM_MAX_S}deg)`;
+  }
+
+  function angoloStimato(){
+    return warmBase + WARM_SPEED * (performance.now() - warmStart) / 1000;
+  }
+
+  // Frena la ruota facendola fermare con l'angolo "allineamento" (0-360) sotto la freccia.
+  function frenaSu(allineamento){
+    const minT = angoloStimato() + 3 * 360;   // almeno 3 giri di frenata
+    const T = minT + ((((allineamento - (minT % 360)) % 360) + 360) % 360);
+    wheelEl.style.transition = `transform ${FINAL_MS}ms ${FINAL_EASE}`;
+    wheelEl.style.transform = `rotate(${T}deg)`;
+    currentRotation = T;
+  }
+
+  function arrestaGiro(){
+    const T = angoloStimato() + 360;
+    wheelEl.style.transition = 'transform 900ms cubic-bezier(.2,.7,.2,1)';
+    wheelEl.style.transform = `rotate(${T}deg)`;
+    currentRotation = T;
+  }
+
+  // --- Registrazione vincita: UNA sola chiamata al server --------------------
+  // Il server controlla il limite del premio in modo atomico: se nel frattempo
+  // è stato esaurito risponde "esaurito" con i contatori aggiornati.
+  async function chiamaVincita(prize, forza){
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          azione: 'vinci',
+          id: prize.id,
+          nome: localStorage.getItem(NAME_KEY) || '',
+          cognome: localStorage.getItem(SURNAME_KEY) || '',
+          forza: !!forza
+        })
+      });
+      return await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function spin(){
     if (spinning || localStorage.getItem(FLAG_KEY)) return;
 
     spinning = true;
     btnSpin.disabled = true;
-    spinResultEl.textContent = 'Un attimo...';
+    spinResultEl.textContent = '';
 
-    let chosen;
-    try {
-      // Contatori sempre aggiornati al momento del giro: eventuali altri
-      // clienti che hanno vinto nel frattempo vengono correttamente esclusi.
-      const freshPremi = await fetchStato();
-      const freshById = {};
-      freshPremi.forEach(p => { freshById[p.id] = p; });
-
-      const merged = premiCache.map(p => ({
-        ...p,
-        maxCount: freshById[p.id] ? freshById[p.id].maxCount : p.maxCount,
-        count: freshById[p.id] ? freshById[p.id].count : 0
-      }));
-      chosen = pickWinnerPrize(merged);
-    } catch (err){
-      spinning = false;
-      btnSpin.disabled = false;
-      spinResultEl.textContent = 'Errore di connessione. Riprova tra qualche secondo.';
-      return;
-    }
-
+    // Estrazione con i dati caricati all'apertura: nessuna attesa di rete.
+    let chosen = pickWinnerPrize(premiCache);
     if (!chosen){
       spinning = false;
       btnSpin.disabled = false;
@@ -1014,34 +1072,45 @@
       return;
     }
 
-    // Registra la vincita PRIMA di animare: se questa richiesta fallisce,
-    // non è stato conteggiato nulla ed è sicuro far ritentare il cliente.
+    avviaGiroAttesa();
+
+    // Registra la vincita PRIMA di fermare la ruota: se fallisce, non è stato
+    // conteggiato nulla ed è sicuro far ritentare il cliente.
+    let data;
     try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          azione: 'vinci',
-          id: chosen.id,
-          nome: localStorage.getItem(NAME_KEY) || '',
-          cognome: localStorage.getItem(SURNAME_KEY) || ''
-        })
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.errore || 'errore');
-      // La vincita è ora registrata sul foglio: la ricordiamo subito, così un
-      // eventuale ricaricamento durante l'animazione non permette di rigirare.
-      localStorage.setItem(CODE_KEY, data.codice || '');
-      localStorage.setItem(FLAG_KEY, '1');
-      localStorage.setItem(PRIZE_KEY, chosen.name || '');
+      data = await chiamaVincita(chosen, effectiveWeight(chosen) <= 0);
+
+      if (data && data.errore === 'esaurito' && Array.isArray(data.premi)){
+        // Un altro cliente ha esaurito il premio nel frattempo: riestraiamo
+        // con i contatori aggiornati e riproviamo una volta.
+        const freshById = {};
+        data.premi.forEach(p => { freshById[p.id] = p; });
+        premiCache = premiCache.map(p => ({
+          ...p,
+          maxCount: freshById[p.id] ? freshById[p.id].maxCount : p.maxCount,
+          count: freshById[p.id] ? freshById[p.id].count : 0
+        }));
+        chosen = pickWinnerPrize(premiCache);
+        if (!chosen) throw new Error('nessun premio disponibile');
+        data = await chiamaVincita(chosen, effectiveWeight(chosen) <= 0);
+      }
+
+      if (!data || !data.ok) throw new Error((data && data.errore) || 'errore');
     } catch (err){
+      arrestaGiro();
       spinning = false;
       btnSpin.disabled = false;
       spinResultEl.textContent = 'Errore di connessione. Riprova tra qualche secondo.';
       return;
     }
 
-    // Da qui in poi la vincita è già registrata: la ruota anima sempre
-    // verso il settore proprio del premio estratto (dimensione invariata).
+    // La vincita è registrata: la ricordiamo subito, così un eventuale
+    // ricaricamento durante l'animazione non permette di rigirare.
+    localStorage.setItem(CODE_KEY, data.codice || '');
+    localStorage.setItem(FLAG_KEY, '1');
+    localStorage.setItem(PRIZE_KEY, chosen.name || '');
+
+    // La ruota frena sempre sul settore proprio del premio estratto.
     const { segments } = buildSegments(premiCache);
     const winnerSeg = segments.find(s => s.id === chosen.id) || segments[segments.length - 1];
 
@@ -1052,11 +1121,7 @@
       : winnerSeg.mid;
     const targetAngle = (targetPct / 100) * 360;
 
-    const spins = 6;
-    const deltaToAlign = ((360 - targetAngle) - (currentRotation % 360) + 360) % 360;
-    currentRotation += spins * 360 + deltaToAlign;
-
-    wheelEl.style.transform = `rotate(${currentRotation}deg)`;
+    frenaSu(((360 - targetAngle) % 360 + 360) % 360);
 
     setTimeout(() => {
       spinning = false;
@@ -1066,7 +1131,7 @@
       btnSpin.disabled = true;
       btnSpin.textContent = 'Hai già partecipato';
       mostraRitiroPremio();
-    }, 4700);
+    }, FINAL_MS + 100);
   }
 
   btnSpin.addEventListener('click', spin);
