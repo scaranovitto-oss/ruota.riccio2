@@ -592,7 +592,32 @@
    MODULO NOME E COGNOME
    ================================ */
 
-#form-section[hidden], #wheel-section[hidden]{ display:none; }
+#form-section[hidden], #wheel-section[hidden], #wait-section[hidden]{ display:none; }
+#wait-section{ padding: 18px 0 8px; }
+.wait-icon{ display:block; text-align:center; font-size: 46px; margin-bottom: 4px; }
+.wait-icon.pulse{ animation: waitPulse 1.6s ease-in-out infinite; }
+@keyframes waitPulse{ 0%,100%{ transform: scale(1); opacity:1; } 50%{ transform: scale(1.12); opacity:.65; } }
+.wait-account{
+  text-align:center;
+  margin: -8px 0 14px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.wait-account strong{ color: var(--ink); }
+.wait-account:empty{ display:none; }
+.wait-hint{
+  text-align:center;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 4px 0 0;
+}
+.wait-hint[hidden], #btn-wait-retry[hidden]{ display:none; }
+.ig-wrap{ position:relative; }
+.ig-wrap .ig-at{
+  position:absolute; left:14px; top:50%; transform:translateY(-50%);
+  font-weight:600; color: var(--ink-soft); pointer-events:none;
+}
+.ig-wrap input{ padding-left: 32px; }
 
 .form-title{
   font-family:'Pacifico', cursive;
@@ -694,25 +719,34 @@
 
   <div class="card">
 
-    <!-- STEP 1: nome e cognome (dopo il countdown) -->
+    <!-- STEP 1: account Instagram (dopo il countdown) -->
     <div id="form-section" hidden>
       <p class="form-title">Prima di girare</p>
-      <p class="form-sub">Inserisci nome e cognome: il premio sarà intestato a te e potrai ritirarlo in cassa.</p>
+      <p class="form-sub">Inserisci il tuo account Instagram, quello con cui hai pubblicato la storia taggandoci. Lo staff la controllerà al tavolo e ti sbloccherà la ruota.</p>
       <form id="player-form" novalidate>
         <div class="form-field">
-          <label for="inp-nome">Nome</label>
-          <input id="inp-nome" type="text" maxlength="40" autocomplete="given-name" autocapitalize="words" required>
-        </div>
-        <div class="form-field">
-          <label for="inp-cognome">Cognome</label>
-          <input id="inp-cognome" type="text" maxlength="40" autocomplete="family-name" autocapitalize="words" required>
+          <label for="inp-ig">Account Instagram</label>
+          <div class="ig-wrap">
+            <span class="ig-at">@</span>
+            <input id="inp-ig" type="text" maxlength="60" inputmode="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="nomeutente" required>
+          </div>
         </div>
         <p class="form-error" id="form-error" role="alert"></p>
-        <button type="submit" class="btn btn-primary" id="btn-form">Continua</button>
+        <button type="submit" class="btn btn-primary" id="btn-form">Invia richiesta</button>
       </form>
     </div>
 
-    <!-- STEP 2: ruota -->
+    <!-- STEP 2: attesa dello sblocco da parte dello staff -->
+    <div id="wait-section" hidden>
+      <span class="wait-icon pulse" id="wait-icon">⏳</span>
+      <p class="form-title" id="wait-title"></p>
+      <p class="form-sub" id="wait-msg"></p>
+      <p class="wait-account" id="wait-account"></p>
+      <p class="wait-hint" id="wait-hint">Non chiudere questa pagina: si aggiorna da sola.</p>
+      <button type="button" class="btn btn-primary" id="btn-wait-retry" hidden>Invia una nuova richiesta</button>
+    </div>
+
+    <!-- STEP 3: ruota -->
     <div id="wheel-section" hidden>
 
     <div class="wheel-area">
@@ -757,11 +791,10 @@
   const FLAG_KEY = 'ilriccio_ruota_ha_partecipato';
   const PRIZE_KEY = 'ilriccio_ruota_premio_vinto';
   const CLAIM_KEY = 'ilriccio_ruota_premio_ritirato';
-  const NAME_KEY = 'ilriccio_ruota_nome';
-  const SURNAME_KEY = 'ilriccio_ruota_cognome';
+  const IG_KEY = 'ilriccio_ruota_instagram';
+  const REQ_KEY = 'ilriccio_ruota_richiesta';
   const CODE_KEY = 'ilriccio_ruota_codice';
-  // Nome/cognome: devono iniziare con una lettera; solo lettere, spazi, ' . -
-  const NAME_RE = /^\p{L}[\p{L}' .\-]*$/u;
+  const POLL_MS = 5000;   // ogni quanto la pagina d'attesa chiede se è stata sbloccata
   const PALETTE = ['#E5231B', '#23A69E', '#201613', '#A81410'];
 
   let premiCache = [];   // stato della ruota così come "fotografato" al caricamento:
@@ -770,6 +803,8 @@
   let currentRotation = 0;
   let spinning = false;
   let claiming = false;
+  let inviando = false;
+  let pollTimer = null;
 
   const wheelEl = document.getElementById('wheel');
   const spinResultEl = document.getElementById('spin-result');
@@ -782,10 +817,17 @@
   const claimNameEl = document.getElementById('claim-name');
   const claimErrorEl = document.getElementById('claim-error');
   const formSectionEl = document.getElementById('form-section');
+  const waitSectionEl = document.getElementById('wait-section');
+  const waitIconEl = document.getElementById('wait-icon');
+  const waitTitleEl = document.getElementById('wait-title');
+  const waitMsgEl = document.getElementById('wait-msg');
+  const waitAccountEl = document.getElementById('wait-account');
+  const waitHintEl = document.getElementById('wait-hint');
+  const btnWaitRetry = document.getElementById('btn-wait-retry');
+  const btnForm = document.getElementById('btn-form');
   const wheelSectionEl = document.getElementById('wheel-section');
   const playerForm = document.getElementById('player-form');
-  const inpNome = document.getElementById('inp-nome');
-  const inpCognome = document.getElementById('inp-cognome');
+  const inpIg = document.getElementById('inp-ig');
   const formErrorEl = document.getElementById('form-error');
 
   function nominalWeight(p){
@@ -902,52 +944,161 @@
     return data.premi;
   }
 
-  // Mostra la sezione di ritiro premio: avviso + tasto di conferma, oppure
-  // (se il premio è già stato ritirato) solo il messaggio finale.
-  function normalizzaNome(v){
-    return String(v || '').replace(/\s+/g, ' ').trim();
+  // --- Account Instagram ------------------------------------------------------
+  // Accetta "@nome", "nome" o un link instagram.com/nome (stessa pulizia dello script).
+  function pulisciIg(v){
+    let t = String(v || '').trim();
+    t = t.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').split(/[\/?#]/)[0];
+    t = t.replace(/^@+/, '').toLowerCase();
+    return /^[a-z0-9._]{1,30}$/.test(t) ? t : null;
   }
 
-  function nomeValido(v){
-    return v.length > 0 && v.length <= 40 && NAME_RE.test(v);
+  // --- Schermate -------------------------------------------------------------
+  function mostraSezione(nome){
+    formSectionEl.hidden = nome !== 'form';
+    waitSectionEl.hidden = nome !== 'wait';
+    wheelSectionEl.hidden = nome !== 'wheel';
   }
 
   function mostraForm(){
-    inpNome.value = localStorage.getItem(NAME_KEY) || '';
-    inpCognome.value = localStorage.getItem(SURNAME_KEY) || '';
+    fermaPolling();
+    inpIg.value = localStorage.getItem(IG_KEY) || '';
     formErrorEl.textContent = '';
-    wheelSectionEl.hidden = true;
-    formSectionEl.hidden = false;
+    mostraSezione('form');
   }
 
   function mostraRuota(){
-    formSectionEl.hidden = true;
-    wheelSectionEl.hidden = false;
+    fermaPolling();
+    mostraSezione('wheel');
     renderWheel(); // ora che la ruota è visibile le dimensioni sono corrette
   }
 
-  playerForm.addEventListener('submit', function(ev){
-    ev.preventDefault();
-    const nome = normalizzaNome(inpNome.value);
-    const cognome = normalizzaNome(inpCognome.value);
-    if (!nomeValido(nome) || !nomeValido(cognome)){
-      formErrorEl.textContent = 'Inserisci nome e cognome validi (solo lettere, spazi, apostrofi e trattini).';
-      return;
+  function impostaAttesa(icona, pulsa, titolo, msg, conRiprova){
+    waitIconEl.textContent = icona;
+    waitIconEl.classList.toggle('pulse', pulsa);
+    waitTitleEl.textContent = titolo;
+    waitMsgEl.textContent = msg;
+    waitAccountEl.textContent = '';
+    const ig = localStorage.getItem(IG_KEY);
+    if (ig){
+      waitAccountEl.appendChild(document.createTextNode('Account: '));
+      const strong = document.createElement('strong');
+      strong.textContent = '@' + ig;
+      waitAccountEl.appendChild(strong);
     }
-    localStorage.setItem(NAME_KEY, nome);
-    localStorage.setItem(SURNAME_KEY, cognome);
-    mostraRuota();
+    waitHintEl.hidden = !!conRiprova;
+    btnWaitRetry.hidden = !conRiprova;
+    mostraSezione('wait');
+  }
+
+  function mostraInAttesa(){
+    impostaAttesa('⏳', true, 'Richiesta inviata',
+      'Mostra la storia con il tag a un membro dello staff: appena l\'avrà verificata ti sbloccherà la ruota.', false);
+  }
+
+  // Stati diversi da "In attesa" e "Sbloccata": la richiesta non può proseguire.
+  function mostraEsitoRichiesta(stato){
+    fermaPolling();
+    localStorage.removeItem(REQ_KEY);
+    if (stato === 'Rifiutata'){
+      impostaAttesa('❌', false, 'Richiesta non approvata',
+        'Lo staff non ha potuto verificare la storia. Controlla di averla pubblicata taggando il locale e invia una nuova richiesta.', true);
+    } else if (stato === 'Scaduta'){
+      impostaAttesa('⌛', false, 'Richiesta scaduta',
+        'La richiesta non è stata approvata in tempo. Puoi inviarne una nuova.', true);
+    } else if (stato === 'Usata'){
+      impostaAttesa('🎟️', false, 'Richiesta già utilizzata',
+        'Con questa richiesta la ruota è già stata girata. Se hai vinto, mostra il premio allo staff.', true);
+    } else {
+      impostaAttesa('❔', false, 'Richiesta non trovata',
+        'Non riusciamo a ritrovare la tua richiesta. Puoi inviarne una nuova.', true);
+    }
+  }
+
+  // --- Attesa dello sblocco ----------------------------------------------------
+  function fermaPolling(){
+    if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  async function controllaRichiesta(){
+    const id = localStorage.getItem(REQ_KEY);
+    if (!id){ mostraForm(); return; }
+
+    let data;
+    try {
+      const res = await fetch(API_URL + '?action=richiesta&id=' + encodeURIComponent(id) + '&_=' + Date.now());
+      data = await res.json();
+    } catch (err){
+      return; // problema di rete: si riprova al prossimo controllo
+    }
+
+    // Nel frattempo la richiesta può essere stata annullata o cambiata da un'altra scheda.
+    if (localStorage.getItem(REQ_KEY) !== id) return;
+
+    const stato = data && data.stato;
+    if (stato === 'In attesa') return;
+    if (stato === 'Sbloccata'){ mostraRuota(); return; }
+    mostraEsitoRichiesta(stato);
+  }
+
+  function avviaAttesa(){
+    fermaPolling();
+    mostraInAttesa();
+    controllaRichiesta();
+    pollTimer = setInterval(controllaRichiesta, POLL_MS);
+  }
+
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden && pollTimer) controllaRichiesta();
   });
 
+  btnWaitRetry.addEventListener('click', function(){
+    localStorage.removeItem(REQ_KEY);
+    mostraForm();
+  });
+
+  // --- Invio della richiesta di sblocco -----------------------------------------
+  playerForm.addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    if (inviando) return;
+
+    const ig = pulisciIg(inpIg.value);
+    if (!ig){
+      formErrorEl.textContent = 'Inserisci un account Instagram valido (solo lettere, numeri, punti e underscore).';
+      return;
+    }
+
+    inviando = true;
+    btnForm.disabled = true;
+    formErrorEl.textContent = '';
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ azione: 'richiedi', instagram: ig })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.errore || 'errore');
+      localStorage.setItem(IG_KEY, data.instagram || ig);
+      localStorage.setItem(REQ_KEY, data.id);
+      avviaAttesa();
+    } catch (err){
+      formErrorEl.textContent = 'Non riesco a inviare la richiesta. Controlla la connessione e riprova.';
+    } finally {
+      inviando = false;
+      btnForm.disabled = false;
+    }
+  });
+
+  // Mostra la sezione di ritiro premio: avviso + tasto di conferma, oppure
+  // (se il premio è già stato ritirato) solo il messaggio finale.
   function mostraRitiroPremio(){
     const ritirato = !!localStorage.getItem(CLAIM_KEY);
-    const nome = localStorage.getItem(NAME_KEY);
-    const cognome = localStorage.getItem(SURNAME_KEY);
+    const ig = localStorage.getItem(IG_KEY);
     claimNameEl.textContent = '';
-    if (nome && cognome){
-      claimNameEl.appendChild(document.createTextNode('Premio intestato a: '));
+    if (ig){
+      claimNameEl.appendChild(document.createTextNode('Premio per: '));
       const strong = document.createElement('strong');
-      strong.textContent = nome + ' ' + cognome;
+      strong.textContent = '@' + ig;
       claimNameEl.appendChild(strong);
     }
     claimBoxEl.hidden = false;
@@ -1045,8 +1196,7 @@
         body: JSON.stringify({
           azione: 'vinci',
           id: prize.id,
-          nome: localStorage.getItem(NAME_KEY) || '',
-          cognome: localStorage.getItem(SURNAME_KEY) || '',
+          richiesta: localStorage.getItem(REQ_KEY) || '',
           forza: !!forza
         })
       });
@@ -1095,14 +1245,24 @@
         data = await chiamaVincita(chosen, effectiveWeight(chosen) <= 0);
       }
 
-      if (!data || !data.ok) throw new Error((data && data.errore) || 'errore');
+      if (!data || !data.ok){
+        const e = new Error((data && data.errore) || 'errore');
+        e.sblocco = !!(data && data.errore === 'sblocco');
+        throw e;
+      }
     } catch (err){
       arrestaGiro();
       spinning = false;
+      if (err && err.sblocco){
+        // La richiesta non risulta (più) sbloccata: serve una nuova approvazione dello staff.
+        mostraEsitoRichiesta(data && data.motivo);
+        return;
+      }
       btnSpin.disabled = false;
       spinResultEl.textContent = 'Errore di connessione. Riprova tra qualche secondo.';
       return;
     }
+    localStorage.removeItem(REQ_KEY); // richiesta consumata dalla vincita
 
     // La vincita è registrata: la ricordiamo subito, così un eventuale
     // ricaricamento durante l'animazione non permette di rigirare.
@@ -1150,6 +1310,8 @@
 
     let datiPronti = false;
     let datiErrore = false;
+
+    const giaPartecipato = !!localStorage.getItem(FLAG_KEY);
 
     // Il recupero da Google Sheets parte subito, in parallelo al countdown.
     const datiPromise = fetchStato()
@@ -1215,11 +1377,13 @@
     countdownEl.textContent = '✓';
     statusEl.textContent = 'Ruota pronta!';
 
-    // Dopo il countdown: se ha già partecipato mostriamo direttamente lo stato,
-    // altrimenti prima il modulo nome e cognome.
-    if (localStorage.getItem(FLAG_KEY)) {
+    // Ha già partecipato -> stato finale; ha una richiesta aperta -> riprende l'attesa
+    // (la pagina può essere stata ricaricata); altrimenti prima il form Instagram.
+    if (giaPartecipato) {
       mostraRuota();
       mostraGiaPartecipato();
+    } else if (localStorage.getItem(REQ_KEY)) {
+      avviaAttesa();
     } else {
       mostraForm();
     }
