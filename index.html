@@ -794,7 +794,9 @@
   const IG_KEY = 'ilriccio_ruota_instagram';
   const REQ_KEY = 'ilriccio_ruota_richiesta';
   const CODE_KEY = 'ilriccio_ruota_codice';
-  const POLL_MS = 5000;   // ogni quanto la pagina d'attesa chiede se è stata sbloccata
+  const POLL_MS = 2500;   // ogni quanto la pagina d'attesa chiede se è stata sbloccata
+  const RIGIOCO_MS = 24 * 60 * 60 * 1000; // dopo quanto tempo dalla vincita si può rigiocare
+                                          // (lo stesso limite è controllato anche dallo script)
   const PALETTE = ['#E5231B', '#23A69E', '#201613', '#A81410'];
 
   let premiCache = [];   // stato della ruota così come "fotografato" al caricamento:
@@ -953,6 +955,53 @@
     return /^[a-z0-9._]{1,30}$/.test(t) ? t : null;
   }
 
+  // --- Partecipazione e rigioco dopo 24 ore -----------------------------------
+  // FLAG_KEY contiene il momento della vincita (millisecondi). Il vecchio valore
+  // "1" non ha la data: lo trattiamo come scaduto, tanto lo script blocca comunque
+  // chi ha giocato da meno di 24 ore.
+  function momentoGiocata(){
+    const v = localStorage.getItem(FLAG_KEY);
+    if (!v) return null;
+    const t = Number(v);
+    return t > 1 ? t : 0;
+  }
+
+  function azzeraPartecipazione(){
+    [FLAG_KEY, PRIZE_KEY, CLAIM_KEY, CODE_KEY].forEach(k => localStorage.removeItem(k));
+  }
+
+  // true se il cliente ha giocato da meno di 24 ore; se il tempo è passato
+  // cancella i dati della giocata precedente così può partecipare di nuovo.
+  function partecipazioneAttiva(){
+    const t = momentoGiocata();
+    if (t === null) return false;
+    if (t && Date.now() - t < RIGIOCO_MS) return true;
+    azzeraPartecipazione();
+    return false;
+  }
+
+  function formattaRigioco(ms){
+    return new Date(ms).toLocaleString('it-IT', {
+      weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  // Se la pagina resta aperta fino alla scadenza, si ricarica da sola e
+  // mostra di nuovo il modulo.
+  let timerRigioco = null;
+  function programmaRigioco(){
+    const t = momentoGiocata();
+    if (!t) return;
+    clearTimeout(timerRigioco);
+    const mancano = t + RIGIOCO_MS - Date.now();
+    if (mancano > 0 && mancano < 2147483647) timerRigioco = setTimeout(() => location.reload(), mancano + 1000);
+  }
+
+  function testoRigioco(){
+    const t = momentoGiocata();
+    return t ? `<br><small>Potrai girare di nuovo la ruota da ${formattaRigioco(t + RIGIOCO_MS)}.</small>` : '';
+  }
+
   // --- Schermate -------------------------------------------------------------
   function mostraSezione(nome){
     formSectionEl.hidden = nome !== 'form';
@@ -1077,7 +1126,15 @@
         body: JSON.stringify({ azione: 'richiedi', instagram: ig })
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.errore || 'errore');
+      if (data.errore === 'giaGiocato'){
+        formErrorEl.textContent = '@' + (data.instagram || ig) + ' ha già girato la ruota: potrai rigiocare da '
+          + formattaRigioco(new Date(data.rigiocoDa).getTime()) + '.';
+        return;
+      }
+      if (!data.ok){
+        formErrorEl.textContent = 'Non riesco a inviare la richiesta: ' + (data.errore || 'errore') + '.';
+        return;
+      }
       localStorage.setItem(IG_KEY, data.instagram || ig);
       localStorage.setItem(REQ_KEY, data.id);
       avviaAttesa();
@@ -1140,10 +1197,11 @@
     const premioVinto = localStorage.getItem(PRIZE_KEY);
     btnSpin.disabled = true;
     btnSpin.textContent = 'Hai già partecipato';
-    spinResultEl.innerHTML = premioVinto
+    spinResultEl.innerHTML = (premioVinto
       ? `Hai già vinto: <strong>${premioVinto}</strong>! Grazie per aver partecipato 🎉`
-      : 'Hai già partecipato a questa promozione. Grazie!';
+      : 'Hai già partecipato a questa promozione. Grazie!') + testoRigioco();
     if (premioVinto) mostraRitiroPremio();
+    programmaRigioco();
   }
 
   // --- Animazione -----------------------------------------------------------
@@ -1207,7 +1265,7 @@
   }
 
   async function spin(){
-    if (spinning || localStorage.getItem(FLAG_KEY)) return;
+    if (spinning || partecipazioneAttiva()) return;
 
     spinning = true;
     btnSpin.disabled = true;
@@ -1267,7 +1325,8 @@
     // La vincita è registrata: la ricordiamo subito, così un eventuale
     // ricaricamento durante l'animazione non permette di rigirare.
     localStorage.setItem(CODE_KEY, data.codice || '');
-    localStorage.setItem(FLAG_KEY, '1');
+    localStorage.setItem(FLAG_KEY, String(Date.now()));
+    localStorage.removeItem(CLAIM_KEY); // premio nuovo: ancora da ritirare
     localStorage.setItem(PRIZE_KEY, chosen.name || '');
 
     // La ruota frena sempre sul settore proprio del premio estratto.
@@ -1285,12 +1344,12 @@
 
     setTimeout(() => {
       spinning = false;
-      spinResultEl.innerHTML = `🎉 Hai vinto: <strong>${winnerSeg.name}</strong>!`;
-      localStorage.setItem(FLAG_KEY, '1');
+      spinResultEl.innerHTML = `🎉 Hai vinto: <strong>${winnerSeg.name}</strong>!` + testoRigioco();
       localStorage.setItem(PRIZE_KEY, winnerSeg.name);
       btnSpin.disabled = true;
       btnSpin.textContent = 'Hai già partecipato';
       mostraRitiroPremio();
+      programmaRigioco();
     }, FINAL_MS + 100);
   }
 
@@ -1311,7 +1370,7 @@
     let datiPronti = false;
     let datiErrore = false;
 
-    const giaPartecipato = !!localStorage.getItem(FLAG_KEY);
+    const giaPartecipato = partecipazioneAttiva();
 
     // Il recupero da Google Sheets parte subito, in parallelo al countdown.
     const datiPromise = fetchStato()
